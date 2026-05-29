@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>历史图谱 · History Lineage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+  :root{
+    --paper:#f3ead3;
+    --paper-2:#ece0c0;
+    --ink:#2e271d;
+    --ink-soft:#6b5d47;
+    --line:#cdbd97;
+    --china:#a8341f;        /* 朱赭 */
+    --china-soft:#e8cfc4;
+    --west:#2f5d6b;         /* 靛青 */
+    --west-soft:#c8d8da;
+    --split:#b8860b;        /* 分裂连线·暗金 */
+    --accent:#7a1f12;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;}
+  body{
+    background:
+      radial-gradient(circle at 20% 10%, rgba(255,255,255,.35), transparent 40%),
+      var(--paper);
+    color:var(--ink);
+    font-family:"Spectral","Noto Serif SC",serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* paper grain */
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    mix-blend-mode:multiply;
+  }
+  header{
+    position:relative;z-index:1;
+    padding:22px 28px 10px;
+    border-bottom:1px solid var(--line);
+  }
+  h1{
+    font-family:"Noto Serif SC",serif;
+    font-weight:700;margin:0;font-size:26px;letter-spacing:2px;
+  }
+  h1 .en{font-family:"Spectral";font-style:italic;font-weight:400;color:var(--ink-soft);font-size:16px;margin-left:10px;letter-spacing:0;}
+  .legend{margin-top:8px;font-size:13px;color:var(--ink-soft);display:flex;gap:18px;flex-wrap:wrap;align-items:center;}
+  .legend .sw{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px;}
+  .legend .split-key{display:inline-flex;align-items:center;gap:6px;}
+  .legend svg{vertical-align:middle;}
+  .hint{font-size:12px;color:var(--ink-soft);margin-left:auto;font-style:italic;}
+  #chart{position:relative;z-index:1;width:100%;}
+  svg{display:block;width:100%;}
+  .axis text{font-family:"Spectral";fill:var(--ink-soft);font-size:12px;}
+  .axis line, .axis path{stroke:var(--line);}
+  .gridline{stroke:var(--line);stroke-dasharray:2 4;opacity:.5;}
+  .lane-bg{opacity:.35;}
+  .lane-label{font-family:"Noto Serif SC";font-weight:700;font-size:15px;}
+  .lane-label-en{font-family:"Spectral";font-style:italic;font-size:11px;}
+  .entity rect{rx:3;stroke-width:1;cursor:pointer;transition:filter .15s;}
+  .entity:hover rect{filter:brightness(1.08) drop-shadow(0 2px 4px rgba(0,0,0,.25));}
+  .entity text{font-family:"Noto Serif SC";font-weight:600;font-size:12px;pointer-events:none;}
+  .link{fill:none;stroke:var(--split);stroke-width:1.6;opacity:.7;}
+  .link.is-split{stroke-width:2.2;opacity:.9;}
+  .crosshair{stroke:var(--accent);stroke-width:1;stroke-dasharray:3 3;pointer-events:none;opacity:0;}
+  .crosshair-label{fill:var(--accent);font-family:"Spectral";font-size:12px;font-weight:600;pointer-events:none;opacity:0;}
+  #tooltip{
+    position:fixed;z-index:10;pointer-events:none;opacity:0;
+    background:var(--ink);color:var(--paper);
+    padding:8px 12px;border-radius:4px;font-size:13px;line-height:1.5;
+    box-shadow:0 4px 14px rgba(0,0,0,.3);max-width:240px;transition:opacity .12s;
+  }
+  #tooltip b{font-family:"Noto Serif SC";font-size:14px;}
+  #tooltip .meta{color:var(--paper-2);font-size:12px;font-style:italic;}
+  #tooltip .split-note{color:#f0d27a;font-size:12px;margin-top:3px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>历史图谱<span class="en">Lineage Timeline</span></h1>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--china)"></span>中国 China</span>
+    <span><span class="sw" style="background:var(--west)"></span>西方 West</span>
+    <span class="split-key">
+      <svg width="34" height="14"><path d="M0,7 C12,7 12,2 22,2" stroke="var(--split)" stroke-width="2.2" fill="none"/><path d="M0,7 C12,7 12,12 22,12" stroke="var(--split)" stroke-width="2.2" fill="none"/></svg>
+      分裂 / 继承
+    </span>
+    <span class="hint">滚轮缩放 · 拖拽平移 · 悬停看详情</span>
+  </div>
+</header>
+
+<div id="chart"></div>
+<div id="tooltip"></div>
+
+<!-- ============================================================= -->
+<!-- 数据维护区:只改下面这段 YAML 即可。                            -->
+<!-- entity 字段:                                                   -->
+<!--   id        唯一标识(英文,被 successors 引用)                 -->
+<!--   name      显示名                                              -->
+<!--   track     属于哪条泳道(见顶部 tracks)                       -->
+<!--   start/end 年份,负数=公元前                                   -->
+<!--   successors 演变去向;多个=分裂,多个entity指向同一个=合并      -->
+<!-- ============================================================= -->
+<script type="application/yaml" id="data">
+tracks:
+  - id: china
+    name: 中国
+    name_en: China
+    color: "#a8341f"
+    bg: "#e8cfc4"
+  - id: west
+    name: 西方
+    name_en: West
+    color: "#2f5d6b"
+    bg: "#c8d8da"
+
+entities:
+  # ---------- 中国 ----------
+  - { id: qin,    name: 秦,        track: china, start: -221, end: -206, successors: [han] }
+  - { id: han,    name: 汉,        track: china, start: -206, end: 220,  successors: [wei, shu, wu] }   # 分裂为三国
+  - { id: wei,    name: 魏,        track: china, start: 220,  end: 266,  successors: [jin] }
+  - { id: shu,    name: 蜀,        track: china, start: 221,  end: 263 }                                # 被魏所灭
+  - { id: wu,     name: 吴,        track: china, start: 222,  end: 280,  successors: [jin] }            # 归晋(合并)
+  - { id: jin,    name: 晋,        track: china, start: 266,  end: 420,  successors: [nanbei] }
+  - { id: nanbei, name: 南北朝,    track: china, start: 420,  end: 589,  successors: [sui] }
+  - { id: sui,    name: 隋,        track: china, start: 581,  end: 618,  successors: [tang] }
+  - { id: tang,   name: 唐,        track: china, start: 618,  end: 907,  successors: [wudai] }
+  - { id: wudai,  name: 五代十国,  track: china, start: 907,  end: 960,  successors: [song] }
+  - { id: song,   name: 宋,        track: china, start: 960,  end: 1279, successors: [yuan] }
+  - { id: yuan,   name: 元,        track: china, start: 1271, end: 1368, successors: [ming] }
+  - { id: ming,   name: 明,        track: china, start: 1368, end: 1644, successors: [qing] }
+  - { id: qing,   name: 清,        track: china, start: 1636, end: 1912 }
+
+  # ---------- 西方 ----------
+  - { id: rep,    name: 罗马共和国,     track: west, start: -509, end: -27,  successors: [emp] }
+  - { id: emp,    name: 罗马帝国,       track: west, start: -27,  end: 395,  successors: [wrome, erome] }  # 分裂为东西罗马
+  - { id: wrome,  name: 西罗马帝国,     track: west, start: 395,  end: 476 }                               # 灭亡
+  - { id: erome,  name: 东罗马(拜占庭), track: west, start: 395,  end: 1453 }                              # 1453 灭亡
+  - { id: frank,  name: 法兰克王国,     track: west, start: 481,  end: 843,  successors: [wfrank, mfrank, efrank] }  # 凡尔登条约三分
+  - { id: wfrank, name: 西法兰克,       track: west, start: 843,  end: 987,  successors: [france] }
+  - { id: mfrank, name: 中法兰克,       track: west, start: 843,  end: 855 }                               # 旋即瓦解
+  - { id: efrank, name: 东法兰克,       track: west, start: 843,  end: 962,  successors: [hre] }
+  - { id: france, name: 法兰西王国,     track: west, start: 987,  end: 1792 }
+  - { id: hre,    name: 神圣罗马帝国,   track: west, start: 962,  end: 1806 }
+</script>
+
+<script>
+"use strict";
+
+// ---------- 解析数据 ----------
+const raw = jsyaml.load(document.getElementById("data").textContent);
+const tracks = raw.tracks;
+const entities = raw.entities;
+const byId = new Map(entities.map(e => [e.id, e]));
+
+// 校验 successors 指向存在
+entities.forEach(e => (e.successors || []).forEach(s => {
+  if (!byId.has(s)) console.warn(`未知 successor: ${s} (来自 ${e.id})`);
+}));
+
+// ---------- 泳道内行分配(贪心,避免并存政权重叠) ----------
+const trackRows = {};   // trackId -> 行数
+tracks.forEach(t => {
+  const list = entities.filter(e => e.track === t.id).sort((a,b) => a.start - b.start);
+  const rowEnds = [];   // 每行当前占用到的 end 年份
+  list.forEach(e => {
+    let row = rowEnds.findIndex(end => end <= e.start);
+    if (row === -1){ row = rowEnds.length; rowEnds.push(-Infinity); }
+    rowEnds[row] = e.end;
+    e._row = row;
+  });
+  trackRows[t.id] = rowEnds.length;
+});
+
+// ---------- 布局常量 ----------
+const ROW_H = 40, BAR_H = 28, LANE_PAD = 26, LANE_GAP = 14;
+const M = { top: 46, right: 30, bottom: 28, left: 96 };
+
+// 每条泳道的垂直起点
+let cursor = M.top;
+const laneTop = {};
+tracks.forEach(t => {
+  laneTop[t.id] = cursor;
+  cursor += LANE_PAD + trackRows[t.id] * ROW_H + LANE_PAD + LANE_GAP;
+});
+const innerH = cursor - LANE_GAP;
+const fullH = innerH + M.bottom;
+
+// entity 的绝对 y
+entities.forEach(e => {
+  e._y = laneTop[e.track] + LANE_PAD + e._row * ROW_H;
+});
+
+// ---------- 时间标尺 ----------
+const minYear = d3.min(entities, e => e.start) - 30;
+const maxYear = d3.max(entities, e => e.end) + 30;
+
+const chart = document.getElementById("chart");
+let width = chart.clientWidth;
+
+const svg = d3.select("#chart").append("svg").attr("height", fullH);
+const defs = svg.append("defs");
+
+// 泳道背景层、连线层、entity 层、轴层
+const gLaneBg = svg.append("g");
+const gGrid   = svg.append("g");
+const gLink   = svg.append("g");
+const gEntity = svg.append("g");
+const gAxis   = svg.append("g").attr("class","axis");
+const gLabel  = svg.append("g");
+const gCross  = svg.append("g");
+
+const crossLine  = gCross.append("line").attr("class","crosshair").attr("y1", M.top - 8).attr("y2", innerH);
+const crossLabel = gCross.append("text").attr("class","crosshair-label").attr("y", M.top - 12).attr("text-anchor","middle");
+
+let x = d3.scaleLinear().domain([minYear, maxYear]);
+let xz = x;   // 当前(被 zoom 变换后)的标尺
+
+function fmtYear(y){ return y < 0 ? `前${-y}` : `${y}`; }
+
+// 泳道标签 + 背景(不随 zoom 变化)
+function drawStatic(){
+  gLaneBg.selectAll("*").remove();
+  gLabel.selectAll("*").remove();
+  tracks.forEach(t => {
+    const top = laneTop[t.id];
+    const h = LANE_PAD*2 + trackRows[t.id]*ROW_H;
+    gLaneBg.append("rect")
+      .attr("class","lane-bg")
+      .attr("x", 0).attr("y", top)
+      .attr("width", width).attr("height", h)
+      .attr("fill", t.bg);
+    gLabel.append("text")
+      .attr("class","lane-label")
+      .attr("x", 14).attr("y", top + 22)
+      .attr("fill", t.color)
+      .text(t.name);
+    gLabel.append("text")
+      .attr("class","lane-label-en")
+      .attr("x", 14).attr("y", top + 38)
+      .attr("fill", t.color)
+      .text(t.name_en);
+  });
+}
+
+const linkGen = d3.linkHorizontal().x(d => d[0]).y(d => d[1]);
+
+function render(){
+  const tip = d3.select("#tooltip");
+
+  // 轴
+  const ticks = xz.ticks(Math.max(4, Math.floor(width/110)));
+  const axis = d3.axisTop(xz).tickValues(ticks).tickFormat(fmtYear).tickSize(6);
+  gAxis.attr("transform", `translate(0,${M.top})`).call(axis);
+
+  // 网格竖线
+  const grid = gGrid.selectAll("line").data(ticks);
+  grid.enter().append("line").attr("class","gridline")
+    .merge(grid)
+    .attr("x1", d => xz(d)).attr("x2", d => xz(d))
+    .attr("y1", M.top).attr("y2", innerH);
+  grid.exit().remove();
+
+  // entity 横条
+  const visW = d => Math.max(2, xz(d.end) - xz(d.start));
+  const g = gEntity.selectAll("g.entity").data(entities, d => d.id);
+  const gEnter = g.enter().append("g").attr("class","entity");
+  gEnter.append("rect");
+  gEnter.append("text");
+  const gAll = gEnter.merge(g);
+
+  gAll.select("rect")
+    .attr("x", d => xz(d.start))
+    .attr("y", d => d._y)
+    .attr("width", visW)
+    .attr("height", BAR_H)
+    .attr("fill", d => tracks.find(t=>t.id===d.track).bg)
+    .attr("stroke", d => tracks.find(t=>t.id===d.track).color)
+    .attr("fill-opacity", .85);
+
+  gAll.select("text")
+    .attr("x", d => xz(d.start) + 6)
+    .attr("y", d => d._y + BAR_H/2 + 4)
+    .attr("fill", d => tracks.find(t=>t.id===d.track).color)
+    .attr("opacity", d => visW(d) > 30 ? 1 : 0)   // 太窄不显示文字
+    .text(d => d.name);
+
+  gAll
+    .on("mousemove", (ev, d) => {
+      const dur = (d.end - d.start);
+      const splitNote = (d.successors && d.successors.length > 1)
+        ? `<div class="split-note">↳ 分裂为 ${d.successors.map(s=>byId.get(s)?.name||s).join("、")}</div>` : "";
+      tip.html(`<b>${d.name}</b><div class="meta">${fmtYear(d.start)} – ${fmtYear(d.end)} · 约 ${dur} 年</div>${splitNote}`)
+         .style("left", (ev.clientX + 14) + "px")
+         .style("top", (ev.clientY + 14) + "px")
+         .style("opacity", 1);
+    })
+    .on("mouseleave", () => tip.style("opacity", 0));
+
+  // 连线(继承/分裂):父条右端中点 -> 子条左端中点
+  const links = [];
+  entities.forEach(e => (e.successors || []).forEach(sid => {
+    const c = byId.get(sid); if (!c) return;
+    links.push({ s:e, t:c, split:(e.successors.length > 1) });
+  }));
+  const lk = gLink.selectAll("path").data(links, d => d.s.id + ">" + d.t.id);
+  lk.enter().append("path")
+    .attr("class", d => "link" + (d.split ? " is-split" : ""))
+    .merge(lk)
+    .attr("d", d => linkGen({
+      source: [xz(d.s.end), d.s._y + BAR_H/2],
+      target: [xz(d.t.start), d.t._y + BAR_H/2]
+    }));
+  lk.exit().remove();
+}
+
+// ---------- 缩放/平移(仅 x) ----------
+const zoom = d3.zoom()
+  .scaleExtent([0.6, 40])
+  .on("zoom", (ev) => { xz = ev.transform.rescaleX(x); render(); });
+
+svg.call(zoom)
+  .on("mousemove.cross", (ev) => {
+    const [mx] = d3.pointer(ev);
+    const yr = Math.round(xz.invert(mx));
+    crossLine.attr("x1", mx).attr("x2", mx).style("opacity", .8);
+    crossLabel.attr("x", mx).text(fmtYear(yr)).style("opacity", 1);
+  })
+  .on("mouseleave.cross", () => { crossLine.style("opacity",0); crossLabel.style("opacity",0); });
+
+// ---------- 初始化 & 响应式 ----------
+function resize(){
+  width = chart.clientWidth;
+  svg.attr("width", width);
+  x.range([M.left, width - M.right]);
+  // 保持当前 zoom 变换
+  const tf = d3.zoomTransform(svg.node());
+  xz = tf.rescaleX(x);
+  drawStatic();
+  render();
+}
+window.addEventListener("resize", resize);
+resize();
+</script>
+</body>
+</html>
